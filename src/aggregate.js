@@ -8,7 +8,8 @@ const { prepareResponse, generateSort, generateCursorQuery } = require('./utils/
  * two criteria so that the pagination magic can work properly.
  *
  * 1. `aggregate()` will insert a `$sort` and `$limit` clauses in your aggregation pipeline immediately after
- * the first $match is found. Consider this while building your pipeline.
+ * the first $match is found. Consider this while building your pipeline. 
+ * NOTE: this will break the $group stage so I changed them to be the last position in pipeline. (thduc89)
  *
  * 2. The documents resulting from the aggregation _must_ contain the paginated fields so that a
  * cursor can be built from the result set.
@@ -56,8 +57,8 @@ module.exports = async function aggregate(collection, params) {
     };
   }
 
-  params.aggregation.splice(index + 1, 0, { $sort });
-  params.aggregation.splice(index + 2, 0, { $limit: params.limit + 1 });
+  params.aggregation.push({ $sort });
+  params.aggregation.push({ $limit: params.limit + 1 });
 
   // Support both the native 'mongodb' driver and 'mongoist'. See:
   // https://www.npmjs.com/package/mongoist#cursor-operations
