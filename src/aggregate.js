@@ -64,7 +64,7 @@ module.exports = async function aggregate(collection, params) {
   // https://www.npmjs.com/package/mongoist#cursor-operations
   const aggregateMethod = collection.aggregateAsCursor ? 'aggregateAsCursor': 'aggregate';
 
-  let results = await collection[aggregateMethod](params.aggregation).toArray();
+  let results = await collection[aggregateMethod](params.aggregation, { allowDiskUse: true }).toArray();
 
   return prepareResponse(results, params);
 };
