@@ -1,6 +1,10 @@
-const _ = require('underscore');
-const sanitizeParams = require('./utils/sanitizeParams');
-const { prepareResponse, generateSort, generateCursorQuery } = require('./utils/query');
+const _ = require("underscore");
+const sanitizeParams = require("./utils/sanitizeParams");
+const {
+  prepareResponse,
+  generateSort,
+  generateCursorQuery,
+} = require("./utils/query");
 
 /**
  * Performs an aggregate() query on a passed-in Mongo collection, using criteria you specify.
@@ -8,11 +12,13 @@ const { prepareResponse, generateSort, generateCursorQuery } = require('./utils/
  * two criteria so that the pagination magic can work properly.
  *
  * 1. `aggregate()` will insert a `$sort` and `$limit` clauses in your aggregation pipeline immediately after
- * the first $match is found. Consider this while building your pipeline. 
+ * the first $match is found. Consider this while building your pipeline.
  * NOTE: this will break the $group stage so I changed them to be the last position in pipeline. (thduc89)
  *
  * 2. The documents resulting from the aggregation _must_ contain the paginated fields so that a
  * cursor can be built from the result set.
+ * NOTE: if the documents resulting from the aggregation does not contain the paginated fields
+ * (because these fields are added during aggregation), then you have to specify the paginatedAtLast parameter to be true.
  *
  * Additionally, an additional query will be appended to the first `$match` found in order to apply the offset
  * required for the cursor.
@@ -33,16 +39,22 @@ const { prepareResponse, generateSort, generateCursorQuery } = require('./utils/
  *    -previous {String} The value to start querying previous page.
  *    -after {String} The _id to start querying the page.
  *    -before {String} The _id to start querying previous page.
+ *    -paginatedAtLast {boolean} Indicate that the cursor query should be executed at last of the pipeline (before sort & limit)
  */
 module.exports = async function aggregate(collection, params) {
-  params = _.defaults(
-    await sanitizeParams(collection, params),
-    { aggregation: [] }
-  );
-  let cursorQuery = generateCursorQuery(params);
+  params = _.defaults(await sanitizeParams(collection, params), {
+    aggregation: [],
+  });
+
+  const { paginatedAtLast, paginatedField } = params;
+
+  let cursorQuery = {};
+  if (!paginatedAtLast) {
+    cursorQuery = generateCursorQuery(params);
+  }
   let $sort = generateSort(params);
-  
-  let index = _.findIndex(params.aggregation, ((step) => !_.isEmpty(step.$match)));
+
+  let index = _.findIndex(params.aggregation, step => !_.isEmpty(step.$match));
 
   if (index < 0) {
     params.aggregation.unshift({ $match: cursorQuery });
@@ -52,9 +64,14 @@ module.exports = async function aggregate(collection, params) {
 
     params.aggregation[index] = {
       $match: {
-        $and: [cursorQuery, matchStep.$match]
-      }
+        $and: [cursorQuery, matchStep.$match],
+      },
     };
+  }
+
+  if (paginatedAtLast) {
+    cursorQuery = generateCursorQuery(params);
+    params.aggregation.push({ $match: cursorQuery });
   }
 
   params.aggregation.push({ $sort });
@@ -62,9 +79,13 @@ module.exports = async function aggregate(collection, params) {
 
   // Support both the native 'mongodb' driver and 'mongoist'. See:
   // https://www.npmjs.com/package/mongoist#cursor-operations
-  const aggregateMethod = collection.aggregateAsCursor ? 'aggregateAsCursor': 'aggregate';
+  const aggregateMethod = collection.aggregateAsCursor
+    ? "aggregateAsCursor"
+    : "aggregate";
 
-  let results = await collection[aggregateMethod](params.aggregation, { allowDiskUse: true }).toArray();
+  let results = await collection[aggregateMethod](params.aggregation, {
+    allowDiskUse: true,
+  }).toArray();
 
   return prepareResponse(results, params);
 };
